@@ -1,3 +1,4 @@
+
 import gym
 from gym_minigrid.wrappers import ImgObsWrapper
 from mini_behavior.utils.wrappers import MiniBHFullyObsWrapper
@@ -61,11 +62,18 @@ class MinigridFeaturesExtractor(BaseFeaturesExtractor):
         with torch.no_grad():
             n_flatten = self.cnn(torch.as_tensor(observation_space.sample()[None]).float()).shape[1]
 
-        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
+        # Adding LSTM layer
+        self.lstm_hidden_size = 128
+        self.lstm = nn.LSTM(input_size=n_flatten, hidden_size=self.lstm_hidden_size, batch_first=True)
+
+        self.linear = nn.Sequential(nn.Linear(self.lstm_hidden_size, features_dim), nn.ReLU())
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
-        return self.linear(self.cnn(observations))
-
+        cnn_features = self.cnn(observations)
+        # Assuming observations are of shape (batch_size, seq_len, features)
+        lstm_out, _ = self.lstm(cnn_features.unsqueeze(1))  # Add seq_len dimension
+        lstm_out = lstm_out[:, -1, :]  # Take the last output from the LSTM
+        return self.linear(lstm_out)
 
 policy_kwargs = dict(
     features_extractor_class=MinigridFeaturesExtractor,
